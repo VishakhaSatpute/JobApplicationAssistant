@@ -1,11 +1,11 @@
 name: Weekly merge staging → main
 on:
-  # 6:30 pm Central *with* DST handling:
-  # Mar–Oct (CDT): 23:30 UTC is 6:30 pm CDT
+  # 1:00 pm Central *with* DST handling:
+  # Mar–Oct (CDT): 18:00 UTC is 1:00 pm CDT
   schedule:
-      - cron: "40 23 * 3,4,5,6,7,8,9,10 3"
-  # Nov–Feb (CST): 00:30 UTC is 6:30 pm CST (next day UTC)
-      - cron: "40 0 * 11,12,1,2 4"
+      - cron: "0 18 * 3,4,5,6,7,8,9,10 2"
+  # Nov–Feb (CST): 19:00 UTC is 1:00 pm CST
+      - cron: "0 19 * 11,12,1,2 2"
   # Manual trigger if you ever want to run it now
   workflow_dispatch:
 
