@@ -1,0 +1,58 @@
+name: Weekly merge staging → main
+
+on:
+  # 1 pm Central *with* DST handling:
+  # Mar–Oct (CDT): 18:00 UTC is 1 pm CDT
+  - schedule:
+      - cron: "0 18 * 3-10 4"
+  # Nov–Feb (CST): 19:00 UTC is 1 pm CST
+      - cron: "0 19 * 11,12,1,2 4"
+  # Manual trigger if you ever want to run it now
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  weekly-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Ensure GH CLI available
+        run: gh --version
+
+      - name: Open PR from staging → main if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # If a PR already exists from staging to main, do nothing
+          if gh pr list --base main --head staging --state open --json number --jq '.[0].number' | grep -q '^[0-9]'; then
+            echo "PR already open."
+          else
+            gh pr create \
+              --base main \
+              --head staging \
+              --title "Weekly merge: staging → main" \
+              --body "Automated weekly PR from staging to main."
+          fi
+
+      - name: Try to enable auto-merge (squash)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --base main --head staging --state open --json number --jq '.[0].number' || true)
+          if [ -n "$pr" ]; then
+            # If branch protections / checks allow, this turns on auto-merge.
+            gh pr merge "$pr" --squash --auto || echo "Automerge not enabled yet (checks or protections)."
+          fi
