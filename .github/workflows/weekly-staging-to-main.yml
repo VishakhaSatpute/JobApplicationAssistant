@@ -4,9 +4,9 @@ on:
   # 5:07 pm Central *with* DST handling:
   # Mar–Oct (CDT): 22:07 UTC is 5:07 pm CDT
   schedule:
-      - cron: "18 22 * 3-10 3"
+      - cron: "45 22 * 3-10 3"
   # Nov–Feb (CST): 23:07 UTC is 5:07 pm CST
-      - cron: "18 23 * 11,12,1,2 3"
+      - cron: "45 23 * 11,12,1,2 3"
   # Manual trigger if you ever want to run it now
   workflow_dispatch:
 
