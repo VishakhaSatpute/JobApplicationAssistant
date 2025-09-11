@@ -70,12 +70,8 @@ jobs:
               --base main \
               --head staging \
               --title "Weekly merge: staging → main (${{ env.COMMIT_COUNT }} commits from last 7 days)" \
-              --body "Automated weekly PR from staging to main.
-**Time Period**: Last 7 days
-**Commits**: ${{ env.COMMIT_COUNT }} new commits
-**Merge Strategy**: Squash merge
-
-This PR includes only commits from the last 7 days that are in staging but not yet in main."
+              --body "Automated weekly PR from staging to main.\
+              This PR includes only commits from the last 7 days that are in staging but not yet in main."
           fi
           
       - name: Try to enable auto-merge (squash)
@@ -96,7 +92,7 @@ This PR includes only commits from the last 7 days that are in staging but not y
         if: always()
         run: |
           if [ "${{ env.HAS_RECENT_CHANGES }}" == "true" ]; then
-            echo "Workflow completed: PR created/updated for ${{ env.COMMIT_COUNT }} recent commits"
+            echo " Workflow completed: PR created/updated for ${{ env.COMMIT_COUNT }} recent commits"
           else
-            echo "Workflow completed: No recent commits found, no PR needed"
+            echo "ℹWorkflow completed: No recent commits found, no PR needed"
           fi
