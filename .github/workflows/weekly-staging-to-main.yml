@@ -1,102 +1,107 @@
-name: Weekly merge staging → main
+name: Weekly Staging to Main Merge
+
 on:
-  # 1:00 pm Central *with* DST handling:
-  # Mar–Oct (CDT): 18:00 UTC is 1:00 pm CDT
   schedule:
-      - cron: "0 18 * 3,4,5,6,7,8,9,10 2"
-  # Nov–Feb (CST): 19:00 UTC is 1:00 pm CST
-      - cron: "0 19 * 11,12,1,2 2"
-  # Manual trigger if you ever want to run it now
+    # Runs every Tuesday at 1:00 PM Dallas time (Central Time)
+    # During CDT (March-November): 18:00 UTC
+    # During CST (November-March): 19:00 UTC
+    # Using CDT time (18:00 UTC) as primary
+    - cron: '0 18 * * 2'
+  
+  # Allow manual triggering for testing
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  weekly-merge:
+  merge-staging-to-main:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          
-      - name: Configure git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-      - name: Ensure GH CLI available
-        run: gh --version
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for commit analysis
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Configure Git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Check for recent commits in staging
+      id: check_commits
+      run: |
+        # Get commits from staging branch in the last 7 days
+        SEVEN_DAYS_AGO=$(date -d '7 days ago' --iso-8601)
+        echo "Checking for commits since: $SEVEN_DAYS_AGO"
         
-      - name: Check for recent commits only
-        run: |
-          set -euo pipefail
-          
-          # Set your relative cutoff (last 7 days)
-          CUTOFF_PERIOD="7 days ago"
-          
-          # Fetch all remote branches (safer approach)
-          git fetch origin
-          
-          # Check if staging has commits after the cutoff period that aren't in main
-          RECENT_COMMITS=$(git log origin/main..origin/staging --since="$CUTOFF_PERIOD" --oneline)
-          
-          if [ -z "$RECENT_COMMITS" ]; then
-            echo "HAS_RECENT_CHANGES=false" >> $GITHUB_ENV
-            echo "No commits in staging from the last 7 days that aren't in main"
-          else
-            echo "HAS_RECENT_CHANGES=true" >> $GITHUB_ENV
-            echo "Found recent commits in staging:"
-            echo "$RECENT_COMMITS"
-            # Save commit count for PR description
-            COMMIT_COUNT=$(echo "$RECENT_COMMITS" | wc -l)
-            echo "COMMIT_COUNT=$COMMIT_COUNT" >> $GITHUB_ENV
-          fi
-          
-      - name: Open PR from staging → main if missing
-        if: env.HAS_RECENT_CHANGES == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          
-          # If a PR already exists from staging to main, do nothing
-          if gh pr list --base main --head staging --state open --json number --jq '.[0].number' | grep -q '^[0-9]'; then
-            echo "PR already open."
-          else
-            gh pr create \
-              --base main \
-              --head staging \
-              --title "Weekly merge: staging → main (${{ env.COMMIT_COUNT }} commits from last 7 days)" \
-              --body "Automated weekly PR from staging to main.
+        # Switch to staging branch
+        git checkout staging
+        
+        # Count commits in the last 7 days
+        RECENT_COMMITS=$(git log --since="$SEVEN_DAYS_AGO" --oneline | wc -l)
+        echo "Found $RECENT_COMMITS commits in staging from the last 7 days"
+        
+        # Get the commit details for logging
+        if [ $RECENT_COMMITS -gt 0 ]; then
+          echo "Recent commits:"
+          git log --since="$SEVEN_DAYS_AGO" --oneline --no-merges
+          echo "has_recent_commits=true" >> $GITHUB_OUTPUT
+        else
+          echo "No recent commits found in staging branch"
+          echo "has_recent_commits=false" >> $GITHUB_OUTPUT
+        fi
+        
+        echo "recent_commit_count=$RECENT_COMMITS" >> $GITHUB_OUTPUT
 
-📅 **Time Period**: Last 7 days
-📊 **Commits**: ${{ env.COMMIT_COUNT }} new commits
-🔄 **Merge Strategy**: Squash merge
+    - name: Merge staging to main
+      if: steps.check_commits.outputs.has_recent_commits == 'true'
+      run: |
+        echo "Proceeding with merge - found ${{ steps.check_commits.outputs.recent_commit_count }} recent commits"
+        
+        # Switch to main branch
+        git checkout main
+        git pull origin main
+        
+        # Merge staging into main
+        if git merge staging --no-ff -m "Weekly merge: staging to main ($(date '+%Y-%m-%d'))"; then
+          echo "Merge successful"
+          
+          # Push the changes
+          git push origin main
+          echo "Changes pushed to main branch"
+        else
+          echo "Merge failed - there may be conflicts"
+          git merge --abort
+          exit 1
+        fi
 
-This PR includes only commits from the last 7 days that are in staging but not yet in main."
-          fi
-          
-      - name: Try to enable auto-merge (squash)
-        if: env.HAS_RECENT_CHANGES == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          
-          pr=$(gh pr list --base main --head staging --state open --json number --jq '.[0].number' || true)
-          if [ -n "$pr" ]; then
-            # If branch protections / checks allow, this turns on auto-merge.
-            gh pr merge "$pr" --squash --auto || echo "Automerge not enabled yet (checks or protections pending)."
-            echo "✅ Auto-merge enabled for PR #$pr"
-          fi
-          
-      - name: Summary
-        if: always()
-        run: |
-          if [ "${{ env.HAS_RECENT_CHANGES }}" == "true" ]; then
-            echo "Workflow completed: PR created/updated for ${{ env.COMMIT_COUNT }} recent commits"
-          else
-            echo "Workflow completed: No recent commits found, no PR needed"
-          fi
+    - name: Create merge summary
+      if: steps.check_commits.outputs.has_recent_commits == 'true'
+      run: |
+        echo "## Weekly Merge Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Date**: $(date '+%Y-%m-%d %H:%M:%S') Dallas Time" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commits merged**: ${{ steps.check_commits.outputs.recent_commit_count }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Source branch**: staging" >> $GITHUB_STEP_SUMMARY
+        echo "- **Target branch**: main" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Recent commits included:" >> $GITHUB_STEP_SUMMARY
+        git log --since="7 days ago" staging --oneline --no-merges | head -20 >> $GITHUB_STEP_SUMMARY
+
+    - name: Skip merge notification
+      if: steps.check_commits.outputs.has_recent_commits == 'false'
+      run: |
+        echo "## Weekly Merge Skipped" >> $GITHUB_STEP_SUMMARY
+        echo "No commits found in staging branch from the last 7 days." >> $GITHUB_STEP_SUMMARY
+        echo "Merge operation was skipped." >> $GITHUB_STEP_SUMMARY
+        echo "- **Date**: $(date '+%Y-%m-%d %H:%M:%S') Dallas Time" >> $GITHUB_STEP_SUMMARY
+
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "## Merge Failed" >> $GITHUB_STEP_SUMMARY
+        echo "The weekly merge from staging to main failed." >> $GITHUB_STEP_SUMMARY
+        echo "Please check the logs and resolve any conflicts manually." >> $GITHUB_STEP_SUMMARY
+        echo "- **Date**: $(date '+%Y-%m-%d %H:%M:%S') Dallas Time" >> $GITHUB_STEP_SUMMARY
