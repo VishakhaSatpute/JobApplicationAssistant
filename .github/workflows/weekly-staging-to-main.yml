@@ -36,12 +36,11 @@ jobs:
           # Set your relative cutoff (last 7 days)
           CUTOFF_PERIOD="7 days ago"
           
-          # Fetch both branches
-          git fetch origin main:main
-          git fetch origin staging:staging
+          # Fetch all remote branches (safer approach)
+          git fetch origin
           
           # Check if staging has commits after the cutoff period that aren't in main
-          RECENT_COMMITS=$(git log main..staging --since="$CUTOFF_PERIOD" --oneline)
+          RECENT_COMMITS=$(git log origin/main..origin/staging --since="$CUTOFF_PERIOD" --oneline)
           
           if [ -z "$RECENT_COMMITS" ]; then
             echo "HAS_RECENT_CHANGES=false" >> $GITHUB_ENV
@@ -70,8 +69,13 @@ jobs:
               --base main \
               --head staging \
               --title "Weekly merge: staging → main (${{ env.COMMIT_COUNT }} commits from last 7 days)" \
-              --body "Automated weekly PR from staging to main.\
-              This PR includes only commits from the last 7 days that are in staging but not yet in main."
+              --body "Automated weekly PR from staging to main.
+
+📅 **Time Period**: Last 7 days
+📊 **Commits**: ${{ env.COMMIT_COUNT }} new commits
+🔄 **Merge Strategy**: Squash merge
+
+This PR includes only commits from the last 7 days that are in staging but not yet in main."
           fi
           
       - name: Try to enable auto-merge (squash)
@@ -85,14 +89,14 @@ jobs:
           if [ -n "$pr" ]; then
             # If branch protections / checks allow, this turns on auto-merge.
             gh pr merge "$pr" --squash --auto || echo "Automerge not enabled yet (checks or protections pending)."
-            echo "Auto-merge enabled for PR #$pr"
+            echo "✅ Auto-merge enabled for PR #$pr"
           fi
           
       - name: Summary
         if: always()
         run: |
           if [ "${{ env.HAS_RECENT_CHANGES }}" == "true" ]; then
-            echo " Workflow completed: PR created/updated for ${{ env.COMMIT_COUNT }} recent commits"
+            echo "Workflow completed: PR created/updated for ${{ env.COMMIT_COUNT }} recent commits"
           else
-            echo "ℹWorkflow completed: No recent commits found, no PR needed"
+            echo "Workflow completed: No recent commits found, no PR needed"
           fi
